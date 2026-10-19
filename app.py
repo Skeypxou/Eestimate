@@ -1,10 +1,13 @@
-
 import streamlit as st
 import pandas as pd
-import json
-from pathlib import Path
 from datetime import date
 
+from services.client_service import (
+    charger_clients,
+    ajouter_client,
+    modifier_client,
+    rechercher_clients,
+)
 st.set_page_config(
     page_title="Atelier PVC Pro",
     page_icon="🪟",
