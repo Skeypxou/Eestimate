@@ -8,30 +8,30 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "storage"
-CLIENTS_FILE = DATA_DIR / "clients.json"
+DEVIS_FILE = DATA_DIR / "devis.json"
 
 
-def charger_clients():
+def charger_devis():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    if not CLIENTS_FILE.exists():
+    if not DEVIS_FILE.exists():
         return []
 
     try:
-        with CLIENTS_FILE.open("r", encoding="utf-8") as f:
-            clients = json.load(f)
+        with DEVIS_FILE.open("r", encoding="utf-8") as fichier:
+            devis = json.load(fichier)
     except (json.JSONDecodeError, OSError) as erreur:
         raise RuntimeError(
-            "Lecture impossible de clients.json. Vérifie le fichier."
+            "Impossible de lire storage/devis.json."
         ) from erreur
 
-    if not isinstance(clients, list):
-        raise ValueError("clients.json doit contenir une liste.")
+    if not isinstance(devis, list):
+        raise ValueError("devis.json doit contenir une liste.")
 
-    return clients
+    return devis
 
 
-def sauvegarder_clients(clients):
+def sauvegarder_devis(devis):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     temporaire = None
 
@@ -42,13 +42,13 @@ def sauvegarder_clients(clients):
             dir=DATA_DIR,
             suffix=".tmp",
             delete=False,
-        ) as f:
-            temporaire = f.name
-            json.dump(clients, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
+        ) as fichier:
+            temporaire = fichier.name
+            json.dump(devis, fichier, ensure_ascii=False, indent=2)
+            fichier.flush()
+            os.fsync(fichier.fileno())
 
-        os.replace(temporaire, CLIENTS_FILE)
+        os.replace(temporaire, DEVIS_FILE)
 
     except OSError as erreur:
         if temporaire and os.path.exists(temporaire):
@@ -56,65 +56,51 @@ def sauvegarder_clients(clients):
                 os.remove(temporaire)
             except OSError:
                 pass
-        raise RuntimeError("Enregistrement des clients impossible.") from erreur
+
+        raise RuntimeError(
+            "Impossible d'enregistrer les devis."
+        ) from erreur
 
 
-def ajouter_client(nom, telephone="", email="", adresse=""):
-    nom = nom.strip()
-    if not nom:
-        raise ValueError("Le nom du client est obligatoire.")
+def creer_devis(client_id, lignes, notes=""):
+    if not client_id:
+        raise ValueError("Sélectionne un client.")
 
-    clients = charger_clients()
+    if not lignes:
+        raise ValueError("Ajoute au moins un article au devis.")
 
-    client = {
+    total = 0.0
+
+    for ligne in lignes:
+        try:
+            quantite = float(ligne["quantite"])
+            prix = float(ligne["prix_unitaire"])
+        except (KeyError, TypeError, ValueError) as erreur:
+            raise ValueError(
+                "Vérifie les quantités et les prix."
+            ) from erreur
+
+        if quantite <= 0 or prix < 0:
+            raise ValueError(
+                "La quantité doit être positive et le prix non négatif."
+            )
+
+        total += quantite * prix
+
+    devis = charger_devis()
+
+    nouveau_devis = {
         "id": str(uuid.uuid4()),
-        "nom": nom,
-        "telephone": telephone.strip(),
-        "email": email.strip(),
-        "adresse": adresse.strip(),
-        "date_creation": date.today().isoformat(),
-        "actif": True,
+        "numero": f"DEV-{date.today():%Y%m%d}-{len(devis) + 1:04d}",
+        "date": date.today().isoformat(),
+        "client_id": str(client_id),
+        "lignes": lignes,
+        "notes": notes.strip(),
+        "total": round(total, 2),
+        "statut": "En attente",
     }
 
-    clients.append(client)
-    sauvegarder_clients(clients)
-    return client
+    devis.append(nouveau_devis)
+    sauvegarder_devis(devis)
 
-
-def modifier_client(
-    client_id, nom, telephone="", email="", adresse=""
-):
-    nom = nom.strip()
-    if not nom:
-        raise ValueError("Le nom du client est obligatoire.")
-
-    clients = charger_clients()
-
-    for client in clients:
-        if client.get("id") == client_id:
-            client.update({
-                "nom": nom,
-                "telephone": telephone.strip(),
-                "email": email.strip(),
-                "adresse": adresse.strip(),
-            })
-            sauvegarder_clients(clients)
-            return client
-
-    raise ValueError("Client introuvable.")
-
-
-def rechercher_clients(texte=""):
-    clients = charger_clients()
-    texte = texte.strip().casefold()
-
-    if not texte:
-        return clients
-
-    return [
-        client for client in clients
-        if any(
-            texte in str(client.get(champ, "")).casefold()
-            for champ in ("nom", "telephone", "email")
-        )
-    ]
+    return nouveau_devis
